@@ -64,6 +64,9 @@ switch -glob -- $project_name {
         set dvb "dvb"
         set txfir "txfir"
         set dac_dds "dac_dds"
+        # GNSS module (u-blox MAX footprint) serial port on PL bank 13,
+        # Linux ttyS0 via the 16550 node at 0x42C00000 (see boards/signalsdrpro)
+        set uart16550 "uart16550"
     }
     "nano" {
         

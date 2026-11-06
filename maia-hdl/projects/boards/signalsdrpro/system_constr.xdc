@@ -190,6 +190,14 @@ set_property -dict {PACKAGE_PIN E19 IOSTANDARD LVCMOS18} [get_ports sel_clk_src]
 set_property -dict {PACKAGE_PIN a20 IOSTANDARD LVCMOS18} [get_ports rx1_led ]
 set_property -dict {PACKAGE_PIN b19 IOSTANDARD LVCMOS18} [get_ports rx2_led ]
 
+# GNSS module serial, bank 13 (VCCO 3.3 V), 43 ohm series resistors on the board.
+# Schematic (SignalSDRPro Logic diagrams, sheets 40M_REF and PL_IO):
+#   U7 IO_L11P_T1_SRCC_13  GPS_TXD_R  module TXD -> FPGA  (serial_rx)
+#   U9 IO_L17P_T2_13       GPS_RXD_R  FPGA -> module RXD  (serial_tx)
+# Not wired yet: T5 GPS_1PPS_RAW (1PPS), U5/V6/V10 DAC8531, V11/W6 ADF4001, Y13 mux select.
+set_property -dict {PACKAGE_PIN U7 IOSTANDARD LVCMOS33} [get_ports gps_txd]
+set_property -dict {PACKAGE_PIN U9 IOSTANDARD LVCMOS33} [get_ports gps_rxd]
+
 set_false_path -from [get_pins {i_system_wrapper/system_i/axi_ad9361/inst/i_rx/i_up_adc_common/up_adc_gpio_out_int_reg[0]/C}]
 set_false_path -from [get_pins {i_system_wrapper/system_i/axi_ad9361/inst/i_tx/i_up_dac_common/up_dac_gpio_out_int_reg[0]/C}]
 set_false_path -from [get_pins {i_system_wrapper/system_i/manual_decim/U0/gpio_core_1/Not_Dual.gpio_Data_Out_reg[0]/C}]

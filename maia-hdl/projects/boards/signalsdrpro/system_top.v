@@ -84,7 +84,12 @@ module system_top (
   output          spi_mosi , 
   input           spi_miso ,
   output          tx1_en , tx2_en , sel_clk_src,
-  output rx1_led,rx2_led
+  output rx1_led,rx2_led,
+
+  // GNSS module (U12) serial, schematic nets GPS_TXD_R / GPS_RXD_R:
+  // gps_txd is the module's TXD (data into the FPGA), gps_rxd its RXD
+  input           gps_txd,
+  output          gps_rxd
   );
 
 
@@ -145,6 +150,9 @@ assign rx2_led = 1'b0 ;
     .rx_clk_in (rx_clk_in),
     .rx_data_in (rx_data_in),
     .rx_frame_in (rx_frame_in),
+
+    .serial_rx (gps_txd),
+    .serial_tx (gps_rxd),
     
     // .ltc2630_mosi_0(ltc2630_mosi_0),
     // .ltc2630_ncs_0(ltc2630_ncs_0),
