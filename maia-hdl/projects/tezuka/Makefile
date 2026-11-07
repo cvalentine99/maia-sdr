@@ -21,8 +21,12 @@ LIB_DEPS += axi_dmac
 LIB_DEPS += util_pack/util_cpack2
 LIB_DEPS += util_pack/util_upack2
 
-#DEST = ../../../../tezuka_fw/board/tezuka/$(PROJECT_NAME)/bitstream
-DEST = /media/hp-z2-dev/Variste/Doc/prog/tezuka_fw/board/tezuka/$(PROJECT_NAME)/bitstream
+# Where install copies system_top.xsa (as tezuka.xsa). Defaults to a tezuka_fw
+# checkout next to this maia-sdr one; override from the environment
+# (DEST=/path make all), never on the make command line: adi-hdl's
+# project-xilinx.mk turns command-line variables into project parameters.
+DEST ?= ../../../../tezuka_fw/board/tezuka/$(PROJECT_NAME)/bitstream
+#DEST = /media/hp-z2-dev/Variste/Doc/prog/tezuka_fw/board/tezuka/$(PROJECT_NAME)/bitstream
 include ../../adi-hdl/projects/scripts/project-xilinx.mk
 
 build_project: $(PROJECT_NAME).xpr
