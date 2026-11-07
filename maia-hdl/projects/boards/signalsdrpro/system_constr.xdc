@@ -1,34 +1,21 @@
-set_property PACKAGE_PIN p16 [get_ports gpio_en_agc]       
 #
 set_property PACKAGE_PIN n17 [get_ports gpio_resetb]       
 #
 
-set_property PACKAGE_PIN t10 [get_ports {gpio_ctl[0]}]        
 #  
-set_property PACKAGE_PIN j14 [get_ports {gpio_ctl[1]}]        
 # 
-set_property PACKAGE_PIN n15 [get_ports {gpio_ctl[2]}]        
 #
 
 
-set_property PACKAGE_PIN n16 [get_ports {gpio_ctl[3]}]        
 #
 
-set_property PACKAGE_PIN t11 [get_ports {gpio_status[0]}]      
 #
-set_property PACKAGE_PIN t14 [get_ports {gpio_status[1]}]      
 #
-set_property PACKAGE_PIN t15 [get_ports {gpio_status[2]}]     
 #
-set_property PACKAGE_PIN t17 [get_ports {gpio_status[3]}]    
 #
-set_property PACKAGE_PIN t19 [get_ports {gpio_status[4]}]    
 #
-set_property PACKAGE_PIN t20 [get_ports {gpio_status[5]}]   
  #
-set_property PACKAGE_PIN u13 [get_ports {gpio_status[6]}]   
 #
-set_property PACKAGE_PIN v13 [get_ports {gpio_status[7]}]    
 #
 
 set_property PACKAGE_PIN n20 [get_ports rx_clk_in]           
@@ -116,20 +103,7 @@ set_property PACKAGE_PIN r19 [get_ports spi_miso]
 
 
 
-set_property IOSTANDARD LVCMOS18 [get_ports gpio_en_agc]
 set_property IOSTANDARD LVCMOS18 [get_ports gpio_resetb]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_ctl[3]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_ctl[2]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_ctl[1]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_ctl[0]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_status[7]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_status[6]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_status[5]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_status[4]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_status[3]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_status[2]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_status[1]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {gpio_status[0]}]
 set_property IOSTANDARD LVCMOS18 [get_ports iic_scl]
 set_property IOSTANDARD LVCMOS18 [get_ports iic_sda] 
 
@@ -194,7 +168,6 @@ set_property -dict {PACKAGE_PIN b19 IOSTANDARD LVCMOS18} [get_ports rx2_led ]
 # Schematic (SignalSDRPro Logic diagrams, sheets 40M_REF and PL_IO):
 #   U7 IO_L11P_T1_SRCC_13  GPS_TXD_R  module TXD -> FPGA  (serial_rx)
 #   U9 IO_L17P_T2_13       GPS_RXD_R  FPGA -> module RXD  (serial_tx)
-# Not wired yet: U5/V6/V10 DAC8531, V11/W6 ADF4001, Y13 mux select (all bank 13, 3.3 V).
 set_property -dict {PACKAGE_PIN U7 IOSTANDARD LVCMOS33} [get_ports gps_txd]
 set_property -dict {PACKAGE_PIN U9 IOSTANDARD LVCMOS33} [get_ports gps_rxd]
 # GNSS 1PPS (GPS_1PPS_RAW), asynchronous pulse into PS EMIO GPIO 14
@@ -210,3 +183,40 @@ set_false_path -from [get_pins {i_system_wrapper/system_i/manual_decim/U0/gpio_c
 
 
  
+
+# ---------------------------------------------------------------------------
+# 40 MHz VC-TCXO reference chain (schematic sheet 40M_REF, pins on PL_IO and
+# AD936X). Bank 13 is 3.3 V. L16 (bank 35) and T19/T20 (bank 34) sit in 1.8 V
+# banks but the board drives them from 3.3 V buffers through 43/51/37 ohm
+# series resistors; that is the board as built, not a choice made here.
+# ---------------------------------------------------------------------------
+# FPGA_CLK: 40 MHz from the oscillator buffer U26B, L16 = IO_L11P_T1_SRCC_35.
+# Clock for the ADF4001 blocks, and counted as data by vctcxo_lock.
+set_property -dict {PACKAGE_PIN L16 IOSTANDARD LVCMOS18} [get_ports ref_40m]
+create_clock -name clk_40m -period 25 [get_ports ref_40m]
+# ADF4001 SPI clock, ref_40m / 8 from the adf4001_spi_clk register in system_top
+create_generated_clock -name adf4001_spi_clk -source [get_pins adf4001_spi_clk_reg/C] -divide_by 8 [get_pins adf4001_spi_clk_reg/Q]
+# REF_CHK: 10 MHz copy of J13 from the CDC3RL02 buffer, T19 = IO_25_34 (data only)
+set_property -dict {PACKAGE_PIN T19 IOSTANDARD LVCMOS18} [get_ports ref_10m]
+# TRIG: PPS input J11, T20
+set_property -dict {PACKAGE_PIN T20 IOSTANDARD LVCMOS18} [get_ports pps_ext]
+set_false_path -from [get_ports {ref_10m pps_ext}]
+# DAC8531 U19 and ADF4001 U5 on one SPI bus (bank 13)
+set_property -dict {PACKAGE_PIN U5  IOSTANDARD LVCMOS33} [get_ports dac_nsync]
+set_property -dict {PACKAGE_PIN V10 IOSTANDARD LVCMOS33} [get_ports pll_sck]
+set_property -dict {PACKAGE_PIN V6  IOSTANDARD LVCMOS33} [get_ports pll_din]
+set_property -dict {PACKAGE_PIN W6  IOSTANDARD LVCMOS33} [get_ports pll_csn]
+set_property -dict {PACKAGE_PIN V11 IOSTANDARD LVCMOS33} [get_ports pll_muxout]
+# 40M-VC-SEL, tune mux U14 select
+set_property -dict {PACKAGE_PIN Y13 IOSTANDARD LVCMOS33} [get_ports vc_sel]
+# ADF4001 MUXOUT = R divider output (10 MHz with the reference present),
+# counted by ADF4001_refdet; V11 is not clock capable.
+create_clock -name pll_muxout -period 50 [get_ports pll_muxout]
+set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets -of_objects [get_ports pll_muxout]]
+# Everything crossing between the oscillator domain, MUXOUT and the PS
+# clocks goes through two-flop synchronisers or is quasi-static (EMIO).
+set_clock_groups -asynchronous -group [get_clocks {clk_40m adf4001_spi_clk}] -group [get_clocks pll_muxout] \
+  -group [get_clocks {clk_fpga_0 clk_fpga_1 spi0_clk}]
+# While MUXOUT is programmed as lock detect it is a level, sampled by the
+# two-flop synchroniser in ADF4001_refctl: no timing relation to clk_40m.
+set_false_path -from [get_ports pll_muxout] -to [get_cells -hier -filter {NAME =~ *i_adf4001_refctl/mux_s_reg*}]

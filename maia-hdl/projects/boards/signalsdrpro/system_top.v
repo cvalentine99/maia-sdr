@@ -74,10 +74,10 @@ module system_top (
   output          txnrx,
   input           clk_out,
 
+  // Only the AD9361 reset reaches the PL on this board (CAT_RSTn, N17).
+  // CTRL_IN0-3 are tied low and CTRL_OUT0-7 and EN_AGC are not connected
+  // (schematic sheet AD936X), so their EMIO lines just loop back below.
   inout           gpio_resetb,
-  inout           gpio_en_agc,
-  inout   [ 3:0]  gpio_ctl,
-  inout   [ 7:0]  gpio_status,
 
   output          spi_csn , 
   output          spi_clk , 
@@ -91,8 +91,23 @@ module system_top (
   input           gps_txd,
   output          gps_rxd,
   // GNSS 1PPS (schematic net GPS_1PPS_RAW, pin T5): fed to PS EMIO GPIO 14
-  // (Linux gpio 68) so the kernel pps-gpio driver can timestamp it
-  input           gps_pps
+  // (Linux gpio 68) so the kernel pps-gpio driver can timestamp it, and to
+  // the vctcxo_lock IP as PPS_GPS
+  input           gps_pps,
+
+  // 40 MHz VC-TCXO reference chain (schematic sheet 40M_REF). The oscillator
+  // X2 is tuned through a 74LVC1G3157 mux U14 by either the DAC8531 U19
+  // (vctcxo_lock IP in the block design, PPS or 10 MHz disciplined) or the
+  // charge pump of the ADF4001 U5 locked to the external 10 MHz on J13.
+  input           ref_40m,      // FPGA_CLK, buffered oscillator output (L16)
+  input           ref_10m,      // REF_CHK, buffered copy of the J13 input (T19)
+  input           pps_ext,      // TRIG, the PPS input J11 (T20)
+  output          dac_nsync,    // 40M-DAC-nSYNC, DAC8531 (U5)
+  output          pll_sck,      // PLL_SCK, shared by DAC8531 and ADF4001 (V10)
+  output          pll_din,      // PLL_DIN, shared (V6)
+  output          pll_csn,      // PLL_CSN, ADF4001 LE (W6)
+  input           pll_muxout,   // PLL_LCKED, ADF4001 MUXOUT, also the LED (V11)
+  output          vc_sel        // 40M-VC-SEL, mux select (Y13)
   );
 
 
@@ -106,26 +121,168 @@ assign rx2_led = 1'b0 ;
   
   // internal signals
 
-  wire    [24:0]  gpio_i;
-  wire    [24:0]  gpio_o;
-  wire    [24:0]  gpio_t;
+  wire    [63:0]  gpio_i;
+  wire    [63:0]  gpio_o;
+  wire    [63:0]  gpio_t;
 
   // instantiations
 
-  ad_iobuf #(.DATA_WIDTH(14)) i_iobuf (
-    .dio_t (gpio_t[13:0]),
-    .dio_i (gpio_o[13:0]),
-    .dio_o (gpio_i[13:0]),
-    .dio_p ({ gpio_resetb,        // 13:13
-              gpio_en_agc,        // 12:12
-              gpio_ctl,           // 11: 8
-              gpio_status}));     //  7: 0
+  ad_iobuf #(.DATA_WIDTH(1)) i_iobuf (
+    .dio_t (gpio_t[13]),
+    .dio_i (gpio_o[13]),
+    .dio_o (gpio_i[13]),
+    .dio_p (gpio_resetb));
 
+  // AD9361 en_agc / ctrl / status lines: no pad on this board, loop back
+  assign gpio_i[12:0] = gpio_o[12:0];
   assign gpio_i[14] = gps_pps;
-  assign gpio_i[24:15] = gpio_o[24:15];
- 
+  assign gpio_i[31:15] = gpio_o[31:15];
+
+  // ---------------------------------------------------------------------
+  // Reference clock control on EMIO (Linux gpio 54 + n), same map as
+  // plutoskyr2 so /etc/refclk.conf and S22refclk carry over:
+  //   o[32] force external (ADF4001 loop always closed)
+  //   i[33] 10 MHz present      i[35] charge pump active
+  //   o[34] force internal (loop always open)
+  //   i[51:36] R divider edges per 102.4 us window (1024 = 10 MHz)
+  //   i[52] PLL locked          i[54:53] controller state
+  //        (0 absent, 1 acquire, 2 locked, 3 recheck), see ADF4001_refctl.v
+  // and for the tune mux:
+  //   o[55] force the mux       o[56] forced value (1 = DAC, 0 = ADF4001)
+  //   i[57] mux select as driven
+  // ---------------------------------------------------------------------
+  wire          ref_present;
+  wire          ref_window;
+  wire          ref_good;
+  wire          ref_locked;
+  wire  [1:0]   ref_state;
+  wire          ref_present_out;
+  wire          pll_cp_active;
+  wire  [1:0]   pll_mux_is;
+  wire          pll_cfg_done;
+  wire          ref_cp_req;
+  wire  [1:0]   ref_mux_req;
+  wire          ref_det_enable;
+  wire  [15:0]  ref_count;
+  wire          pll_le;
+  wire          pll_sclk_adf;
+  wire          pll_mosi_adf;
+  wire          dac_sclk;
+  wire          dac_mosi;
+  wire          dac_sync_n;
+
+  assign gpio_i[63:58] = gpio_o[63:58];
+  assign gpio_i[57]    = tune_dac;
+  assign gpio_i[56:55] = gpio_o[56:55];
+  assign gpio_i[54:53] = ref_state;
+  assign gpio_i[52]    = ref_locked;
+  assign gpio_i[51:36] = ref_count;
+  assign gpio_i[35]    = pll_cp_active;
+  assign gpio_i[34]    = gpio_o[34];
+  assign gpio_i[33]    = ref_present_out;
+  assign gpio_i[32]    = gpio_o[32];
+
+  // ---------------------------------------------------------------------
+  // Tune mux U14 (74LVC1G3157): S = 0 connects B1 (pin 1) to the tune
+  // line, S = 1 connects B2 (pin 3). Established on the bench unit with
+  // the mux forced each way and the DAC swept open loop: S = 0 is the
+  // DAC8531 (dac 0 -> -14.8 ppm, 65535 -> +17.9 ppm), S = 1 is the
+  // ADF4001 charge pump loop filter (R112/C291; a floating node while the
+  // charge pump is three-stated, the oscillator then free-runs wherever
+  // it drifted). R108 pulls S high, so an unconfigured PL leaves the loop
+  // filter in charge. Automatic rule: the ADF4001 steers the oscillator
+  // whenever its charge pump is active, i.e. the controller found a
+  // 10 MHz on J13 and closed the loop; otherwise the DAC loop in the
+  // block design does, from the GNSS PPS. The EMIO lines keep the
+  // 1 = DAC convention of /etc/refclk.conf whichever way the pin goes.
+  // ---------------------------------------------------------------------
+  localparam VC_SEL_DAC = 1'b0;
+  localparam VC_SEL_ADF = 1'b1;
+  wire tune_dac = gpio_o[55] ? gpio_o[56] : ~pll_cp_active;
+  assign vc_sel = tune_dac ? VC_SEL_DAC : VC_SEL_ADF;
+
+  // ---------------------------------------------------------------------
+  // Shared SPI bus: SCK and DIN go to both chips, each has its own select.
+  // The ADF4001 frames (a few per second at most, 24 bits at 5 MHz) take
+  // priority: while LE is low the DAC sees its nSYNC held high, so a DAC
+  // frame that collides is simply dropped by the DAC8531 (fewer than 24
+  // SCLK edges under nSYNC) and the loop rewrites it with its next update.
+  // ---------------------------------------------------------------------
+  wire bus_adf = ~pll_le;
+  assign pll_csn   = pll_le;
+  assign pll_sck   = bus_adf ? pll_sclk_adf : dac_sclk;
+  assign pll_din   = bus_adf ? pll_mosi_adf : dac_mosi;
+  assign dac_nsync = dac_sync_n | bus_adf;
+
+  // ---------------------------------------------------------------------
+  // ADF4001 PLL: the blocks from boards/plutoskyr2 (added by
+  // common/xilinx_init.tcl), clocked by the oscillator itself. R = 1,
+  // N = 4: 10 MHz phase detector, 40 MHz VCTCXO on RFIN A.
+  // ---------------------------------------------------------------------
+  reg  [2:0] adf_cnt = 3'd0;
+  reg        adf4001_spi_clk = 1'b0;
+  always @(posedge ref_40m) begin
+    adf_cnt <= adf_cnt + 1'b1;
+    if (adf_cnt == 3'd3) adf4001_spi_clk <= 1'b1;
+    else if (adf_cnt == 3'd7) begin
+      adf4001_spi_clk <= 1'b0;
+      adf_cnt <= 3'd0;
+    end
+  end
+
+  (* ASYNC_REG = "TRUE" *) reg [1:0] cfg_done_sync = 2'b00;
+  always @(posedge ref_40m)
+    cfg_done_sync <= {cfg_done_sync[0], pll_cfg_done};
+
+  ADF4001_init i_adf4001_init (
+    .clk            (adf4001_spi_clk),
+    .rst_n          (1'b1),
+    .ext_ref_en     (ref_cp_req),
+    .mux_sel        (ref_mux_req),
+    .cp_active      (pll_cp_active),
+    .mux_is         (pll_mux_is),
+    .init_done      (pll_cfg_done),
+    .SPI_LE         (pll_le),
+    .SPI_SCLK       (pll_sclk_adf),
+    .SPI_MOSI       (pll_mosi_adf));
+
+  ADF4001_refdet i_adf4001_refdet (
+    .clk            (ref_40m),
+    .muxout         (pll_muxout),
+    .enable         (ref_det_enable),
+    .present        (ref_present),
+    .count          (ref_count),
+    .window         (ref_window),
+    .good           (ref_good));
+
+  ADF4001_refctl i_adf4001_refctl (
+    .clk            (ref_40m),
+    .force_ext      (gpio_o[32]),
+    .force_int      (gpio_o[34]),
+    .det_present    (ref_present),
+    .det_window     (ref_window),
+    .det_good       (ref_good),
+    .muxout         (pll_muxout),
+    .cfg_applied    (cfg_done_sync[1] & (pll_mux_is == ref_mux_req)),
+    .cp_en          (ref_cp_req),
+    .mux_sel        (ref_mux_req),
+    .det_enable     (ref_det_enable),
+    .present        (ref_present_out),
+    .locked         (ref_locked),
+    .state          (ref_state));
+
 
   system_wrapper i_system_wrapper (
+    .CLKIN_10MHz (ref_10m),
+    .CLK_40MHz_FPGA (ref_40m),
+    .CLK_40M_DAC_DIN (dac_mosi),
+    .CLK_40M_DAC_SCLK (dac_sclk),
+    .CLK_40M_DAC_nSYNC (dac_sync_n),
+    .PPS_GPS (gps_pps),
+    .PPS_IN (pps_ext),
+    .PPS_LED (),
+    .PPS_LOCKED (),
+    .REF_10M_LOCKED (),
     .ddr_addr (ddr_addr),
     .ddr_ba (ddr_ba),
     .ddr_cas_n (ddr_cas_n),

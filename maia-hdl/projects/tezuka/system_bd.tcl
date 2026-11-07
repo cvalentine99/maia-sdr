@@ -70,6 +70,10 @@ switch -glob -- $project_name {
         # DVB-S2 symbol front end at 0x43C20000: the shipped signalsdrpro
         # bitstream has it and zynqrx --fpga-front (start_zynqrx) maps it
         set symfront "symfront"
+        # 40 MHz VC-TCXO discipline: DAC8531 driven by vctcxo_lock at
+        # 0x43C00000 (boards/signalsdrpro/vcxo_ctrl.tcl); the ADF4001 PLL
+        # and the tune mux are in system_top.v
+        set vctcxo "vctcxo"
     }
     "nano" {
         
