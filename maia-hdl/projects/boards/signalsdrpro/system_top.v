@@ -89,7 +89,10 @@ module system_top (
   // GNSS module (U12) serial, schematic nets GPS_TXD_R / GPS_RXD_R:
   // gps_txd is the module's TXD (data into the FPGA), gps_rxd its RXD
   input           gps_txd,
-  output          gps_rxd
+  output          gps_rxd,
+  // GNSS 1PPS (schematic net GPS_1PPS_RAW, pin T5): fed to PS EMIO GPIO 14
+  // (Linux gpio 68) so the kernel pps-gpio driver can timestamp it
+  input           gps_pps
   );
 
 
@@ -118,7 +121,8 @@ assign rx2_led = 1'b0 ;
               gpio_ctl,           // 11: 8
               gpio_status}));     //  7: 0
 
-  assign gpio_i[24:14] = gpio_o[24:14];
+  assign gpio_i[14] = gps_pps;
+  assign gpio_i[24:15] = gpio_o[24:15];
  
 
   system_wrapper i_system_wrapper (

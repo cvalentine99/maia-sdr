@@ -194,9 +194,12 @@ set_property -dict {PACKAGE_PIN b19 IOSTANDARD LVCMOS18} [get_ports rx2_led ]
 # Schematic (SignalSDRPro Logic diagrams, sheets 40M_REF and PL_IO):
 #   U7 IO_L11P_T1_SRCC_13  GPS_TXD_R  module TXD -> FPGA  (serial_rx)
 #   U9 IO_L17P_T2_13       GPS_RXD_R  FPGA -> module RXD  (serial_tx)
-# Not wired yet: T5 GPS_1PPS_RAW (1PPS), U5/V6/V10 DAC8531, V11/W6 ADF4001, Y13 mux select.
+# Not wired yet: U5/V6/V10 DAC8531, V11/W6 ADF4001, Y13 mux select (all bank 13, 3.3 V).
 set_property -dict {PACKAGE_PIN U7 IOSTANDARD LVCMOS33} [get_ports gps_txd]
 set_property -dict {PACKAGE_PIN U9 IOSTANDARD LVCMOS33} [get_ports gps_rxd]
+# GNSS 1PPS (GPS_1PPS_RAW), asynchronous pulse into PS EMIO GPIO 14
+set_property -dict {PACKAGE_PIN T5 IOSTANDARD LVCMOS33} [get_ports gps_pps]
+set_false_path -from [get_ports gps_pps]
 
 set_false_path -from [get_pins {i_system_wrapper/system_i/axi_ad9361/inst/i_rx/i_up_adc_common/up_adc_gpio_out_int_reg[0]/C}]
 set_false_path -from [get_pins {i_system_wrapper/system_i/axi_ad9361/inst/i_tx/i_up_dac_common/up_dac_gpio_out_int_reg[0]/C}]
