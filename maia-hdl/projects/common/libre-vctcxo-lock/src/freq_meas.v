@@ -29,9 +29,13 @@
 //
 // First measurement after mode change or init is discarded (partial window).
 //
-// ref_present goes high when reference edges arrive, times out (a
-// saturating counter that resets on every ref edge) when they stop -
-// debounced against a single missed edge by design, not reactive to it.
+// ref_present goes high when reference edges arrive and times out (a
+// saturating counter that resets on every ref edge) when they stop. In
+// 1PPS mode the timeout (2^27 clk cycles, 1.34 s at 100 MHz) sits between
+// one pulse period and two, so a missed pulse is noticed before the next
+// one arrives; the window being counted is then abandoned, and the edge
+// that brings the reference back starts a fresh window instead of
+// delivering an overlong count as a measurement.
 //
 `timescale 1ns / 1ps
 
@@ -81,7 +85,7 @@ module freq_meas #(
     // ------------------------------------------------------------------
     reg [25:0] cnt_pps    = 26'd0; // 40M max -> fits
     reg        first_pps  = 1'b1;
-    reg [26:0] pres_pps   = 27'h7FFFFFF; // ~1.34s timeout @ 100 MHz clk
+    reg [27:0] pres_pps   = 28'hFFFFFFF; // saturates at 2^27 cycles: 1.34 s @ 100 MHz clk
 
     reg pres_i = 1'b0;
     assign ref_present = pres_i;
@@ -104,7 +108,7 @@ module freq_meas #(
             first_10  <= 1'b1;
             first_pps <= 1'b1;
             pres_10   <= 8'hFF;
-            pres_pps  <= 27'h7FFFFFF;
+            pres_pps  <= 28'hFFFFFFF;
             pres_i    <= 1'b0;
             error_out <= {COUNT_W{1'b0}};
         end
@@ -127,7 +131,10 @@ module freq_meas #(
                         pres_10 <= pres_10 + 1'b1;
                     end
                     else begin
-                        pres_i <= 1'b0;
+                        // reference gone: abandon the window being counted,
+                        // the edge that brings it back starts a fresh one
+                        pres_i   <= 1'b0;
+                        first_10 <= 1'b1;
                     end
 
                     // Gate: one measurement window per MEAS_CYCLES ref periods
@@ -156,16 +163,23 @@ module freq_meas #(
                     if (rise_vco)
                         cnt_pps <= cnt_pps + 1'b1;
 
-                    // Presence: saturating counter
+                    // Presence: saturating counter. The timeout has to sit
+                    // between one PPS period and two: long enough never to
+                    // expire between consecutive pulses (bit 26, 0.67 s,
+                    // made ref_present and locked flicker every second),
+                    // short enough that a missed pulse is noticed before
+                    // the next one arrives.
                     if (rise_pps) begin
-                        pres_pps <= 27'd0;
+                        pres_pps <= 28'd0;
                         pres_i   <= 1'b1;
                     end
-                    else if (~pres_pps[26]) begin
+                    else if (~pres_pps[27]) begin
                         pres_pps <= pres_pps + 1'b1;
                     end
                     else begin
-                        pres_i <= 1'b0;
+                        // reference gone: abandon the window being counted
+                        pres_i    <= 1'b0;
+                        first_pps <= 1'b1;
                     end
 
                     if (rise_pps) begin

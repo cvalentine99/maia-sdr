@@ -25,7 +25,13 @@
 module vctcxo_lock_v1_0_S00_AXI #
 (
     parameter integer C_S_AXI_DATA_WIDTH = 32,
-    parameter integer C_S_AXI_ADDR_WIDTH = 6
+    parameter integer C_S_AXI_ADDR_WIDTH = 6,
+    // reset values, see vctcxo_lock (top) for what the boards use
+    parameter integer CENTER_DAC_DEFAULT = 10240,
+    parameter integer REF_SEL_DEFAULT = 0,
+    parameter integer P_SHIFT_DEFAULT = 124,
+    parameter integer I_SHIFT_DEFAULT = 124,
+    parameter integer LOCK_THRESH_DEFAULT = 100
 )
 (
     // User ports
@@ -230,7 +236,12 @@ module vctcxo_lock_v1_0_S00_AXI #
           //      including why the loop's absolute accuracy is ultimately
           //      bounded by the external CLKIN_10MHz reference's own
           //      accuracy, not by these gains.
-          slv_reg0 <= {14'd0, 8'd124, 8'd124, 1'b0, 1'b0};
+          // reg0: dac_mode=0, dither on, p_shift/i_shift from the IP
+          // parameters. 124/124 (the account above) is the libre tuning;
+          // a board sets its own from its measured DAC/oscillator
+          // sensitivity (signalsdrpro: 131/129, boards/signalsdrpro/
+          // vcxo_ctrl.tcl).
+          slv_reg0 <= (I_SHIFT_DEFAULT * 1024) + (P_SHIFT_DEFAULT * 4);
           // reg1[31:16]=center_dac: 0x2800 (10240), NOT the naive
           // mid-scale 0x8000 that matches the ocpi.osp.libresdr
           // reference's own default. An open-loop DAC sweep on this
@@ -244,15 +255,20 @@ module vctcxo_lock_v1_0_S00_AXI #
           // mid-scale (done earlier this project to match the reference
           // exactly) was wrong for this hardware. See vctcxo_lock.md.
           // reg1[15:0]=dac_user_set_value=0.
-          slv_reg1 <= {16'd10240, 16'd0};
+          // Both reset values are IP parameters since 2026-11: the libre
+          // board keeps 0x2800 / CLKIN_10MHz, boards with an onboard GNSS
+          // receiver start mid-scale on PPS_GPS.
+          slv_reg1 <= CENTER_DAC_DEFAULT * 65536;
           slv_reg2 <= 0;
-          slv_reg3 <= 0;
+          slv_reg3 <= REF_SEL_DEFAULT;
           slv_reg4 <= 0;
-          // reg5=lock_thresh: 100 counts (~2.5ppm in both 10 MHz mode and
-          // PPS mode - freq_meas.v's MEAS_CYCLES=10_000_000 gives the
-          // 10 MHz path the same 0.025ppm/count resolution as PPS - see
-          // vctcxo_lock.md). Untested starting point.
-          slv_reg5 <= 32'd100;
+          // reg5=lock_thresh, IP parameter: 100 counts on libre (~2.5ppm
+          // in both 10 MHz mode and PPS mode - freq_meas.v's
+          // MEAS_CYCLES=10_000_000 gives the 10 MHz path the same
+          // 0.025ppm/count resolution as PPS - see vctcxo_lock.md), an
+          // untested starting point there; signalsdrpro declares lock
+          // at 8 counts (0.2 ppm).
+          slv_reg5 <= LOCK_THRESH_DEFAULT;
           slv_reg6 <= 0;
           slv_reg7 <= 0;
           // NCO correction is bypassed by default so the sample values remain

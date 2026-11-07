@@ -1,8 +1,8 @@
 # vctcxo_lock register map
 
 32-bit AXI-Lite, 11 implemented word-registers at offsets `0x00`-`0x28`. Base address
-`0x43C00000` on the `libre` board (`ad_cpu_interconnect` call in
-`boards/libre/vcxo_ctrl.tcl`).
+`0x43C00000` on the `libre` and `signalsdrpro` boards (`ad_cpu_interconnect`
+call in `boards/<board>/vcxo_ctrl.tcl`).
 
 This IP replaces `projects/common/antsdr-hdl/axi_vcxo_ctrl` on the
 `libre` board only - `axi_vcxo_ctrl` is untouched and still used
@@ -16,17 +16,17 @@ map (`axi_vcxo_ctrl/vcxodac.md`).
 |---|---|---|---|---|
 | `0x00` | reg0 (control) | R/W | `[0]` | `dac_mode`: 0 = loop-controlled DAC value (normal), 1 = force `dac_user_set_value` (manual/test) |
 | | | | `[1]` | `dac_dither_dis`: 0 = dither enabled (default), 1 = disabled, plain truncation. Only meaningful for `DEVICE=DAC5311/DAC6311` (DAC7311 already gets the full 12-bit correction range). |
-| | | | `[9:2]` | `p_shift` - proportional gain, centered at `128` = unity. Above 128 amplifies (left-shift), below attenuates (right-shift). Default `124` - see "Tuning p_shift/i_shift" below for the derivation (rescaled from the `ocpi.osp.libresdr` reference's `p_shift=4`, then empirically attenuated 4 bits further for this board's specific DAC7311/VCTCXO sensitivity). |
-| | | | `[17:10]` | `i_shift` - integral gain, same centered-at-128 convention. Default `124` - re-tuned (see "Tuning p_shift/i_shift" below) after the sign fix and 1s measurement window; the earlier `108` derived alongside `p_shift` above turned out inert once the loop actually closed. |
+| | | | `[9:2]` | `p_shift` - proportional gain, centered at `128` = unity. Above 128 amplifies (left-shift), below attenuates (right-shift). Default `124` on libre (IP parameter `P_SHIFT_DEFAULT`; signalsdrpro 131) - see "Tuning p_shift/i_shift" below for the derivation (rescaled from the `ocpi.osp.libresdr` reference's `p_shift=4`, then empirically attenuated 4 bits further for this board's specific DAC7311/VCTCXO sensitivity). |
+| | | | `[17:10]` | `i_shift` - integral gain, same centered-at-128 convention. Default `124` on libre (IP parameter `I_SHIFT_DEFAULT`; signalsdrpro 129) - re-tuned (see "Tuning p_shift/i_shift" below) after the sign fix and 1s measurement window; the earlier `108` derived alongside `p_shift` above turned out inert once the loop actually closed. |
 | | | | `[31:18]` | unused |
 | `0x04` | reg1 (manual setpoint / center) | R/W | `[15:0]` | `dac_user_set_value` - DAC code sent when `dac_mode=1` |
 | | | | `[31:16]` | `center_dac` - DAC value the loop corrects around, and what it holds at when frozen (see "Freeze behavior" below). Default `0x2800` (10240) - **not** the `ocpi.osp.libresdr` reference's naive mid-scale default (`center_dac=2048` i.e. `0x8000` truncated for `DEVICE=DAC7311`). An earlier version of this port matched that reference default exactly; an open-loop DAC sweep on this board (see "The sign bug and the center_dac dead zone" below) found `0x8000` sits in a flat/saturated region of this specific VCTCXO's actual pulling curve, while `0x2800` - matching the value the earlier `b205_ref_pll.v` design had empirically swept to, for a different measurement architecture - is right where `freq_error` crosses zero. Re-sweep via `dac_mode=1`/`dac_user_set_value` if it doesn't converge cleanly on different hardware. |
 | `0x08` | live DAC value | RO | `[15:0]` | The actual 16-bit setpoint currently driving the DAC (loop output or forced value) |
 | `0x0C` | reg3 (ref select) | R/W | `[1:0]` | `dac_ref_sel`: `00`=CLKIN_10MHz, `01`=PPS_IN, `10`=PPS_GPS, `11`=none. Unlike the old design, this directly determines the measurement mode too (`00`->10 MHz counting, `01`/`10`->1PPS counting) - there's no auto-classification of what the selected signal looks like. **Default `00`** (auto-starts the loop on boot) - a deliberate, confirmed departure from the `ocpi.osp.libresdr` reference, which defaults `ref_source` to `none` (loop frozen until software explicitly enables it). This project has defaulted to auto-start since the original `b205_ref_pll.v` design and that convention was kept on purpose, unlike `p_shift`/`i_shift`/`center_dac` above, which are genuine numeric-fidelity fixes. |
 | `0x10` | status | RO | `[0]` | `locked`: `ref_present` and the most recent measurement window's `|freq_error| <= lock_thresh`. Continuously re-evaluated against the latest completed window (1s period for the 10 MHz path - see "Measurement window" below), not a multi-window shift-register history like the old `ld`. |
-| | | `[1]` | `ref_present`: reference edges are arriving (debounced by a saturating timeout counter, not reactive to a single missed edge). |
+| | | `[1]` | `ref_present`: reference edges are arriving. A saturating timeout counter that every reference edge resets: 128 `clk` cycles in 10 MHz mode, 2^27 cycles (1.34 s at 100 MHz) in PPS mode, i.e. between one PPS period and two, so a missed pulse is noticed before the next one. When it expires the window being counted is abandoned as well - see "Freeze behavior" below. |
 | | | `[31:2]` | unused |
-| `0x14` | reg5 (lock threshold) | R/W | `[31:0]` | `lock_thresh` - compared against `|freq_error|` (raw edge-count units, see below) for the `locked` bit. Default `100`. **Untested starting point.** |
+| `0x14` | reg5 (lock threshold) | R/W | `[31:0]` | `lock_thresh` - compared against `|freq_error|` (raw edge-count units, see below) for the `locked` bit. Default `100` on libre (IP parameter `LOCK_THRESH_DEFAULT`, an untested starting point there); signalsdrpro sets 8 (0.2 ppm), well above the 1-2 count jitter of its PPS measurement. |
 | `0x18` | live frequency error | RO | `[31:0]` | `freq_error` - signed, the most recent completed measurement window's edge-count error (`measured - expected`; negative = XO slow, positive = fast). Direct diagnostic readout - no bit-decoding needed, unlike the old design's status word. |
 | `0x1C` | reserved | - | - | unused |
 | `0x20` | RX NCO FTW | R/W | `[31:0]` | Signed Q0.32 phase increment in turns per valid RX sample. This is a shadow value until `apply_toggle` changes. Default `0` (bypass). |
@@ -188,6 +188,19 @@ requires the reference to still be present - a genuine reference loss
 simply stops new corrections from arriving; the DAC output holds at
 whatever it last was, rather than snapping to `center_dac`.
 
+`ref_present` itself is a saturating timeout counter that every reference
+edge resets: 128 `clk` cycles in 10 MHz mode, 2^27 cycles (1.34 s at the
+100 MHz AXI clock) in PPS mode. The PPS timeout has to sit between one
+pulse period and two. The first version checked bit 26 of the counter
+(0.67 s), so `ref_present`, and with it `locked`, dropped for a third of
+every second with a perfectly good PPS - seen on signalsdrpro as a
+`locked` bit that flickered while `freq_error` sat at 0. When the
+timeout does expire, `freq_meas.v` now also abandons the window it was
+counting (`first_pps`/`first_10` are set again), so the edge that brings
+the reference back starts a fresh window instead of delivering a 2 s (or
+longer) count as a measurement, which would have slammed the DAC the
+moment a GNSS receiver recovered its fix.
+
 ## Tuning `p_shift`/`i_shift`/`lock_thresh`
 
 Defaults are chosen to match the `ocpi.osp.libresdr` reference's own
@@ -271,6 +284,28 @@ bang-bang toggle. If instead you see a large, sudden jump followed by a
 frozen `dac_value` and `locked` dropping, suspect accumulator runaway
 (item 3 above) - recover with a reboot, not more register writes, since
 a saturated accumulator in a flat DAC region won't self-correct.
+
+### signalsdrpro: DAC8531 on a DSA321SC, GNSS PPS
+
+The IP parameters `P_SHIFT_DEFAULT`/`I_SHIFT_DEFAULT`/`LOCK_THRESH_DEFAULT`
+(and `CENTER_DAC_DEFAULT`/`REF_SEL_DEFAULT`) exist so that a board sets
+these reset values from its own plant in `boards/<board>/vcxo_ctrl.tcl`;
+libre keeps the values above. On signalsdrpro an open-loop sweep
+(`dac_mode=1`, GNSS PPS selected, 0.025 ppm per count) measured dac 0 ->
+-592 counts (-14.8 ppm), 32768 -> +67 (+1.7 ppm), 65535 -> +715
+(+17.9 ppm): a 32.7 ppm pull range, monotonic and close to linear, about
+0.02 counts (0.5 ppb) per DAC code, zero crossing near 29500. With that
+gain the libre 1/16 integrator would take a 13 minute time constant;
+`p_shift=131` (x8) and `i_shift=129` (x2) give a loop gain of 0.2 per
+1 s window, a 25 s time constant and a steady state of 0..2 counts, the
+DAC moving a few codes (below one count) on the PPS jitter.
+`lock_thresh=8` (0.2 ppm) is well above that jitter. The first attempt,
+132/130 (x16/x4), also converged cleanly (90 s from saturation to 3
+counts) and was only backed off for lower noise injection. Note that the
+sweep only steers anything once the board's tune mux points at the DAC:
+on signalsdrpro that mux select is driven by `system_top.v`, and its
+polarity was established by exactly this sweep (a sweep that changes
+nothing means the mux, not the DAC).
 
 ## Absolute accuracy is bounded by the external reference, not this loop
 
@@ -406,3 +441,12 @@ SPI frame width bug found and fixed earlier this project - `{mode, data,
 2'b00}`, not a bare `{mode, data}` that silently zero-extends on the
 wrong side). Kept as an independent copy per this IP living outside
 `antsdr-hdl`, not a reference to that directory.
+
+`dac8531_spi.v` is the same state machine with the DAC8531's frame
+(`DEVICE=DAC8531`, signalsdrpro): 24 SCLK cycles under nSYNC, six don't
+care bits, PD1/PD0 = 00, then the full 16-bit code, so no dither. SCLK is
+`clk`/32 (3.125 MHz at 100 MHz), DIN changes on the rising edge and is
+captured on the falling edge, the DAC updates on the 24th falling edge.
+On signalsdrpro the bus is shared with an ADF4001 whose frames take
+priority in `system_top.v` by holding nSYNC high: a DAC frame cut short
+is ignored by the chip and rewritten on the loop's next update.

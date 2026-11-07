@@ -687,6 +687,31 @@
         <spirit:value spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.DEVICE">DAC5311</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
+        <spirit:name>CENTER_DAC_DEFAULT</spirit:name>
+        <spirit:displayName>Center Dac Default</spirit:displayName>
+        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.CENTER_DAC_DEFAULT">10240</spirit:value>
+      </spirit:modelParameter>
+      <spirit:modelParameter spirit:dataType="integer">
+        <spirit:name>REF_SEL_DEFAULT</spirit:name>
+        <spirit:displayName>Ref Sel Default</spirit:displayName>
+        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.REF_SEL_DEFAULT">0</spirit:value>
+      </spirit:modelParameter>
+      <spirit:modelParameter spirit:dataType="integer">
+        <spirit:name>P_SHIFT_DEFAULT</spirit:name>
+        <spirit:displayName>P Shift Default</spirit:displayName>
+        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.P_SHIFT_DEFAULT">124</spirit:value>
+      </spirit:modelParameter>
+      <spirit:modelParameter spirit:dataType="integer">
+        <spirit:name>I_SHIFT_DEFAULT</spirit:name>
+        <spirit:displayName>I Shift Default</spirit:displayName>
+        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.I_SHIFT_DEFAULT">124</spirit:value>
+      </spirit:modelParameter>
+      <spirit:modelParameter spirit:dataType="integer">
+        <spirit:name>LOCK_THRESH_DEFAULT</spirit:name>
+        <spirit:displayName>Lock Thresh Default</spirit:displayName>
+        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.LOCK_THRESH_DEFAULT">100</spirit:value>
+      </spirit:modelParameter>
+      <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>C_S00_AXI_DATA_WIDTH</spirit:name>
         <spirit:displayName>C S00 Axi Data Width</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.C_S00_AXI_DATA_WIDTH">32</spirit:value>
@@ -721,6 +746,10 @@
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
       <spirit:file>
+        <spirit:name>src/dac8531_spi.v</spirit:name>
+        <spirit:fileType>verilogSource</spirit:fileType>
+      </spirit:file>
+      <spirit:file>
         <spirit:name>src/vctcxo_lock_v1_0_S00_AXI.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
@@ -741,6 +770,10 @@
       </spirit:file>
       <spirit:file>
         <spirit:name>src/dacxx11_spi.v</spirit:name>
+        <spirit:fileType>verilogSource</spirit:fileType>
+      </spirit:file>
+      <spirit:file>
+        <spirit:name>src/dac8531_spi.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
       <spirit:file>
@@ -767,6 +800,31 @@
       <spirit:name>DEVICE</spirit:name>
       <spirit:displayName>Device</spirit:displayName>
       <spirit:value spirit:resolve="user" spirit:id="PARAM_VALUE.DEVICE">DAC5311</spirit:value>
+    </spirit:parameter>
+    <spirit:parameter>
+      <spirit:name>CENTER_DAC_DEFAULT</spirit:name>
+      <spirit:displayName>Center Dac Default</spirit:displayName>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.CENTER_DAC_DEFAULT">10240</spirit:value>
+    </spirit:parameter>
+    <spirit:parameter>
+      <spirit:name>REF_SEL_DEFAULT</spirit:name>
+      <spirit:displayName>Ref Sel Default</spirit:displayName>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.REF_SEL_DEFAULT">0</spirit:value>
+    </spirit:parameter>
+    <spirit:parameter>
+      <spirit:name>P_SHIFT_DEFAULT</spirit:name>
+      <spirit:displayName>P Shift Default</spirit:displayName>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.P_SHIFT_DEFAULT">124</spirit:value>
+    </spirit:parameter>
+    <spirit:parameter>
+      <spirit:name>I_SHIFT_DEFAULT</spirit:name>
+      <spirit:displayName>I Shift Default</spirit:displayName>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.I_SHIFT_DEFAULT">124</spirit:value>
+    </spirit:parameter>
+    <spirit:parameter>
+      <spirit:name>LOCK_THRESH_DEFAULT</spirit:name>
+      <spirit:displayName>Lock Thresh Default</spirit:displayName>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.LOCK_THRESH_DEFAULT">100</spirit:value>
     </spirit:parameter>
     <spirit:parameter>
       <spirit:name>C_S00_AXI_DATA_WIDTH</spirit:name>

@@ -17,7 +17,22 @@
 //
 module vctcxo_lock #
 (
+    // DAC on the VCTCXO tune line: DAC5311/DAC6311/DAC7311 (16-bit SPI
+    // frame, 8/10/12-bit code, dithered) or DAC8531 (24-bit frame, full
+    // 16-bit code, no dither needed)
     parameter DEVICE = "DAC5311",
+    // reset values of center_dac (reg1[31:16]) and dac_ref_sel (reg3[1:0]):
+    // the libre board swept its VCTCXO to 0x2800 and starts on CLKIN_10MHz;
+    // a board with the GNSS module on PPS_GPS sets REF_SEL_DEFAULT=2 and
+    // the DAC mid-scale until its own curve is known
+    parameter integer CENTER_DAC_DEFAULT = 10240,
+    parameter integer REF_SEL_DEFAULT = 0,
+    // reset values of p_shift/i_shift (reg0[9:2]/[17:10], 128 = unity)
+    // and lock_thresh (reg5): the loop gain depends on the board's
+    // DAC/oscillator sensitivity, see vctcxo_lock.md "Tuning"
+    parameter integer P_SHIFT_DEFAULT = 124,
+    parameter integer I_SHIFT_DEFAULT = 124,
+    parameter integer LOCK_THRESH_DEFAULT = 100,
 
     parameter integer C_S00_AXI_DATA_WIDTH = 32,
     parameter integer C_S00_AXI_ADDR_WIDTH = 6
@@ -82,7 +97,12 @@ module vctcxo_lock #
 
     vctcxo_lock_v1_0_S00_AXI # (
         .C_S_AXI_DATA_WIDTH(C_S00_AXI_DATA_WIDTH),
-        .C_S_AXI_ADDR_WIDTH(C_S00_AXI_ADDR_WIDTH)
+        .C_S_AXI_ADDR_WIDTH(C_S00_AXI_ADDR_WIDTH),
+        .CENTER_DAC_DEFAULT(CENTER_DAC_DEFAULT),
+        .REF_SEL_DEFAULT(REF_SEL_DEFAULT),
+        .P_SHIFT_DEFAULT(P_SHIFT_DEFAULT),
+        .I_SHIFT_DEFAULT(I_SHIFT_DEFAULT),
+        .LOCK_THRESH_DEFAULT(LOCK_THRESH_DEFAULT)
     ) axi_inst (
         .dac_mode(dac_mode),
         .dac_user_set_value(dac_user_set_value),
@@ -253,6 +273,21 @@ module vctcxo_lock #
     // instead of ~48.8 kHz - still well above typical tune-line RC
     // filter corner frequencies.
     // -------------------------------------------------------------------
+    generate if (DEVICE == "DAC8531") begin : g_dac8531
+    // ---------------------------------------------------------------
+    // DAC8531: the full 16-bit setpoint goes out as is, so dither and
+    // dac_dither_dis have nothing to do here.
+    // ---------------------------------------------------------------
+    dac8531_spi u_dac8531_spi (
+        .clk    (clk),
+        .rst    (init),
+        .data   (dac_final),
+        .sclk   (CLK_40M_DAC_SCLK),
+        .mosi   (CLK_40M_DAC_DIN),
+        .sync_n (CLK_40M_DAC_nSYNC)
+    );
+    end else begin : g_dacx311
+
     localparam integer DAC311_BITS = (DEVICE=="DAC7311") ? 12 :
                                       (DEVICE=="DAC6311") ? 10 : 8; // DAC5311 default
     localparam integer DAC311_FRAC_BITS = 16 - DAC311_BITS;
@@ -291,5 +326,6 @@ module vctcxo_lock #
         .mosi   (CLK_40M_DAC_DIN),
         .sync_n (CLK_40M_DAC_nSYNC)
     );
+    end endgenerate
 
 endmodule
