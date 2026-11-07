@@ -67,6 +67,9 @@ switch -glob -- $project_name {
         # GNSS module (u-blox MAX footprint) serial port on PL bank 13,
         # Linux ttyS0 via the 16550 node at 0x42C00000 (see boards/signalsdrpro)
         set uart16550 "uart16550"
+        # DVB-S2 symbol front end at 0x43C20000: the shipped signalsdrpro
+        # bitstream has it and zynqrx --fpga-front (start_zynqrx) maps it
+        set symfront "symfront"
     }
     "nano" {
         
